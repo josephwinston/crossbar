@@ -1,6 +1,6 @@
 ###############################################################################
 ##
-##  Copyright (C) 2011-2013 Tavendo GmbH
+##  Copyright (C) 2011-2014 Tavendo GmbH
 ##
 ##  This program is free software: you can redistribute it and/or modify
 ##  it under the terms of the GNU Affero General Public License, version 3,
@@ -16,24 +16,29 @@
 ##
 ###############################################################################
 
-from _version import __version__
-version = __version__ # backward compat.
+__doc__ = """
+Crossbar.io - Unified application router.
 
-import logger
-import platform
-import netservice
-import adminwebmodule
-import x509util
-import tlsctx
-import txutil
-import cryptoutil
-import database
-import dbexport
-import dbimport
-import config
-import clientfilter
-import bridge
-import customjson
-import service
-import servicefactory
-import cli
+Crossbar.io is an open-source server software that allows developers to create
+distributed systems, composed of application components which are loosely coupled,
+communicate in (soft) real-time and can be implemented in different languages.
+
+Crossbar.io features:
+
+ - application routing core (RPC+PubSub)
+ - full WAMP v2 AP implementation
+ - application component hosting
+ - multi-process architecture
+ - and more
+
+For more information, please go to
+
+ * Homepage: http://crossbar.io/
+ * Documentation: https://github.com/crossbario/crossbar/wiki
+ * Source code: https://github.com/crossbario/crossbar
+
+Open-source licensed under the GNU Affero General Public License version 3.
+Created by Tavendo GmbH. Get in contact at http://tavendo.com
+"""
+
+__version__ = "0.9.7-2"

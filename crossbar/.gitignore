@@ -1,2 +1,8 @@
-appdata
-cbdata
+dist
+build
+*.egg-info
+*.db
+*.zip
+*.egg
+/.crossbar
+_trial_temp

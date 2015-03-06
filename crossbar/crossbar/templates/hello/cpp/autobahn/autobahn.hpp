@@ -298,7 +298,7 @@ namespace autobahn {
          subscribe_requests_t m_subscribe_requests;
 
          /// Map of subscribed handlers (subscription ID -> handler)
-         typedef std::map<uint64_t, handler_t> handlers_t;
+         typedef std::multimap<uint64_t, handler_t> handlers_t;
 
          /// Map of WAMP subscription ID -> handler
          handlers_t m_handlers;
@@ -327,13 +327,12 @@ namespace autobahn {
          /// Map of WAMP registration ID -> endpoint
          endpoints_t m_endpoints;
 
-
-
          /// An unserialized, raw WAMP message.
          typedef std::vector<msgpack::object> wamp_msg_t;
 
 
-
+         /// Process a WAMP ERROR message.
+         inline void process_error(const wamp_msg_t& msg);
 
          /// Process a WAMP HELLO message.
          inline void process_welcome(const wamp_msg_t& msg);

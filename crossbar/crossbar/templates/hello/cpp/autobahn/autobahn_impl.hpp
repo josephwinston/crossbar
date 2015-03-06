@@ -27,6 +27,7 @@
 #include <map>
 #include <string>
 #include <sstream>
+#include <stdexcept>
 
 
 namespace autobahn {
@@ -513,6 +514,9 @@ namespace autobahn {
 
    template<typename IStream, typename OStream>
    void session<IStream, OStream>::unpack_anymap(std::map<std::string, msgpack::object>& raw_kwargs, anymap& kwargs) {
+       for (auto& raw_args : raw_kwargs) {
+           kwargs[raw_args.first] = unpack_any(raw_args.second);
+       }
    }
 
 
@@ -520,7 +524,7 @@ namespace autobahn {
    boost::any session<IStream, OStream>::unpack_any(msgpack::object& obj) {
       switch (obj.type) {
 
-         case msgpack::type::RAW:
+         case msgpack::type::STR:
             return boost::any(obj.as<std::string>());
 
          case msgpack::type::POSITIVE_INTEGER:
@@ -539,23 +543,121 @@ namespace autobahn {
             return boost::any();
 
          case msgpack::type::ARRAY:
-            // FIXME
             {
                anyvec out_vec;
                std::vector<msgpack::object> in_vec;
+
                obj.convert(&in_vec);
-               for (int i = 0; i < in_vec.size(); ++i) {
-                  out_vec.push_back(unpack_any(in_vec[i]));
-               }
+               unpack_anyvec(in_vec, out_vec);
+
                return out_vec;
-               //std::cerr << "unprocess ARRAY" << std::endl;
             }
 
          case msgpack::type::MAP:
-            // FIXME
+            {
+               anymap out_map;
+               std::map<std::string, msgpack::object> in_map;
+
+               obj.convert(&in_map);
+               unpack_anymap(in_map, out_map);
+               return out_map;
+            }
 
          default:
             return boost::any();
+      }
+   }
+
+
+   template<typename IStream, typename OStream>
+   void session<IStream, OStream>::process_error(const wamp_msg_t& msg) {
+
+      // [ERROR, REQUEST.Type|int, REQUEST.Request|id, Details|dict, Error|uri]
+      // [ERROR, REQUEST.Type|int, REQUEST.Request|id, Details|dict, Error|uri, Arguments|list]
+      // [ERROR, REQUEST.Type|int, REQUEST.Request|id, Details|dict, Error|uri, Arguments|list, ArgumentsKw|dict]
+
+      // message length
+      //
+      if (msg.size() != 5 && msg.size() != 6 && msg.size() != 7) {
+         throw protocol_error("invalid ERROR message structure - length must be 5, 6 or 7");
+      }
+
+      // REQUEST.Type|int
+      //
+      if (msg[1].type != msgpack::type::POSITIVE_INTEGER) {
+         throw protocol_error("invalid ERROR message structure - REQUEST.Type must be an integer");
+      }
+      msg_code request_type = static_cast<msg_code> (msg[1].as<int>());
+
+      if (request_type != msg_code::CALL &&
+          request_type != msg_code::REGISTER &&
+          request_type != msg_code::UNREGISTER &&
+          request_type != msg_code::PUBLISH &&
+          request_type != msg_code::SUBSCRIBE &&
+          request_type != msg_code::UNSUBSCRIBE) {
+         throw protocol_error("invalid ERROR message - ERROR.Type must one of CALL, REGISTER, UNREGISTER, SUBSCRIBE, UNSUBSCRIBE");
+      }
+
+      // REQUEST.Request|id
+      //
+      if (msg[2].type != msgpack::type::POSITIVE_INTEGER) {
+         throw protocol_error("invalid ERROR message structure - REQUEST.Request must be an integer");
+      }
+      uint64_t request_id = msg[2].as<uint64_t>();
+
+      // Details
+      //
+      if (msg[3].type != msgpack::type::MAP) {
+         throw protocol_error("invalid ERROR message structure - Details must be a dictionary");
+      }
+
+      // Error|uri
+      //
+      if (msg[4].type != msgpack::type::STR) {
+         throw protocol_error("invalid ERROR message - Error must be a string (URI)");
+      }
+      std::string error = msg[4].as<std::string>();
+
+      // Arguments|list
+      //
+      if (msg.size() > 5) {
+         if (msg[5].type  != msgpack::type::ARRAY) {
+            throw protocol_error("invalid ERROR message structure - Arguments must be a list");
+         }
+      }
+
+      // ArgumentsKw|list
+      //
+      if (msg.size() > 6) {
+         if (msg[6].type  != msgpack::type::MAP) {
+            throw protocol_error("invalid ERROR message structure - ArgumentsKw must be a dictionary");
+         }
+      }
+
+      switch (request_type) {
+
+         case msg_code::CALL:
+            {
+               //
+               // process CALL ERROR
+               //
+               typename calls_t::iterator call = m_calls.find(request_id);
+
+               if (call != m_calls.end()) {
+
+                  // FIXME: forward all error info .. also not sure if this is the correct
+                  // way to use set_exception()
+                  call->second.m_res.set_exception(boost::copy_exception(std::runtime_error(error)));
+
+               } else {
+                  throw protocol_error("bogus ERROR message for non-pending CALL request ID");
+               }
+            }
+            break;
+
+         // FIXME: handle other error messages
+         default:
+            std::cerr << "unhandled ERROR message" << std::endl;
       }
    }
 
@@ -766,7 +868,7 @@ namespace autobahn {
 
          uint64_t subscription_id = msg[2].as<uint64_t>();
 
-         m_handlers[subscription_id] = subscribe_request->second.m_handler;
+         m_handlers.insert(std::make_pair(subscription_id, subscribe_request->second.m_handler));
 
          subscribe_request->second.m_res.set_value(subscription(subscription_id));
 
@@ -795,9 +897,11 @@ namespace autobahn {
 
       uint64_t subscription_id = msg[1].as<uint64_t>();
 
-      typename handlers_t::iterator handler = m_handlers.find(subscription_id);
+      typename handlers_t::iterator handlersBegin = m_handlers.lower_bound(subscription_id);
+      typename handlers_t::iterator handlersEnd = m_handlers.upper_bound(subscription_id);
 
-      if (handler != m_handlers.end()) {
+      if (handlersBegin != m_handlers.end()
+              && handlersBegin != handlersEnd) {
 
          if (msg[2].type != msgpack::type::POSITIVE_INTEGER) {
             throw protocol_error("invalid EVENT message structure - PUBLISHED.Publication|id must be an integer");
@@ -838,7 +942,10 @@ namespace autobahn {
 
             // now trigger the user supplied event handler ..
             //
-            (handler->second)(args, kwargs);
+            while (handlersBegin != handlersEnd) {
+                (handlersBegin->second)(args, kwargs);
+                ++handlersBegin;
+            }
 
          } catch (...) {
             if (m_debug) {
@@ -1008,7 +1115,7 @@ namespace autobahn {
             break;
 
          case msg_code::ERROR:
-            // FIXME
+            process_error(msg);
             break;
 
          case msg_code::PUBLISH:

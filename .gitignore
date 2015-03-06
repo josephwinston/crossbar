@@ -11,3 +11,6 @@ dropin.cache
 crossbardata
 .sconsign.dblite
 *.~vsd
+node_modules
+.idea
+_trial_temp

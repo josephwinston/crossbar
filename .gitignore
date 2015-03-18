@@ -2,8 +2,10 @@
 *.pyo
 *.dat
 *.sublime-workspace
-crossbar/build
-crossbar/dist
+build
+dist
+.coverage
+htmlcov/
 *.egg-info
 *.log
 *.pid
@@ -14,3 +16,14 @@ crossbardata
 node_modules
 .idea
 _trial_temp
+*~
+dist
+build
+*.egg-info
+*.db
+*.zip
+*.egg
+/.crossbar
+_trial_temp
+node_modules
+.tox
